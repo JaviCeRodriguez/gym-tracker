@@ -1,56 +1,41 @@
 # Gym Tracker 💪
 
-Un proyecto para rastrear y monitorear tu progreso en el gimnasio.
-
-## Descripción
-
-**Gym Tracker** es una aplicación diseñada para ayudarte a llevar un registro detallado de tus entrenamientos en el gimnasio. Con esta herramienta puedes:
-
-- 📊 Registrar tus sesiones de entrenamiento
-- 📈 Monitorear tu progreso a lo largo del tiempo
-- 💾 Guardar datos de tus ejercicios
-- 📱 Acceso desde cualquier dispositivo
-
-## Características
-
-- Interfaz amigable e intuitiva
-- Registro de ejercicios y series
-- Seguimiento de progreso
-- Historial de entrenamientos
+Aplicación base de **React Native** para registrar entrenamientos.
 
 ## Requisitos
 
-- Node.js (versión recomendada: 16.x o superior)
-- npm o yarn
+- Node.js >= 22.11
+- JDK 17
+- Android SDK (para compilación local de Android)
 
-## Instalación
+## Desarrollo local
 
 ```bash
-# Clonar el repositorio
-git clone https://github.com/JaviCeRodriguez/gym-tracker.git
-
-# Acceder al directorio
-cd gym-tracker
-
-# Instalar dependencias
 npm install
-```
-
-## Uso
-
-```bash
-# Iniciar la aplicación
 npm start
 ```
 
-## Contribuciones
+En otra terminal:
 
-Las contribuciones son bienvenidas. Para cambios significativos, abre un issue primero para discutir qué te gustaría cambiar.
+```bash
+npm run android
+```
 
-## Licencia
+## CI/CD de APK en GitHub Actions
 
-Este proyecto está disponible bajo la licencia que elijas. Consulta el archivo LICENSE para más detalles.
+El repositorio incluye el workflow:
 
----
+- `/home/runner/work/gym-tracker/gym-tracker/JaviCeRodriguez/gym-tracker/.github/workflows/android-release.yml`
 
-**Creado por:** [JaviCeRodriguez](https://github.com/JaviCeRodriguez)
+Comportamiento:
+
+- Se ejecuta en cada `push`/merge a `main`.
+- Compila `android/app/build/outputs/apk/release/app-release.apk`.
+- Crea una **GitHub Release** automática con tag `v<package.json.version>-<run_number>`.
+- Publica el APK como asset descargable de la Release.
+
+## Descargar e instalar APK
+
+1. Ir a la pestaña **Releases** del repositorio.
+2. Descargar `app-release.apk` del release más reciente.
+3. Instalarlo en Android (habilitando instalación de orígenes desconocidos si aplica).

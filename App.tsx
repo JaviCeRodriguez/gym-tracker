@@ -87,7 +87,7 @@ function AppContent() {
 
     if (!sessionId) {
       sessionId = createId();
-      setSessions([{ id: sessionId, day }]);
+      setSessions(previousValue => [...previousValue, { id: sessionId, day }]);
     }
     const resolvedSessionId = sessionId;
 

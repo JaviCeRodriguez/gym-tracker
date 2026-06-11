@@ -1,9 +1,11 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   Pressable,
   StatusBar,
   StyleSheet,
   Text,
+  TextInput,
   useColorScheme,
   View,
 } from 'react-native';
@@ -14,7 +16,22 @@ import {
 
 type Tab = 'Home' | 'Sesiones' | 'Ejercicios';
 
-const mockExercises = ['Sentadillas', 'Press de banca', 'Peso muerto'];
+type WorkoutSession = {
+  id: string;
+  day: string;
+};
+
+type ExerciseRecord = {
+  id: string;
+  sessionId: string;
+  day: string;
+  exercise: string;
+  setsReps: string;
+  notes: string;
+};
+
+const STORAGE_KEY = 'gym-tracker:sessions';
+const SESSION_ID_PATTERN = /^id-(\d+)$/;
 
 function App() {
   const isDarkMode = useColorScheme() === 'dark';
@@ -30,18 +47,142 @@ function App() {
 function AppContent() {
   const safeAreaInsets = useSafeAreaInsets();
   const [activeTab, setActiveTab] = useState<Tab>('Home');
-  const [sessionCounter, setSessionCounter] = useState(0);
-  const [exerciseIndex, setExerciseIndex] = useState(0);
+  const [sessions, setSessions] = useState<WorkoutSession[]>([]);
+  const [exerciseRecords, setExerciseRecords] = useState<ExerciseRecord[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [day, setDay] = useState('Lunes');
+  const [exercise, setExercise] = useState('');
+  const [setsReps, setSetsReps] = useState('');
+  const [notes, setNotes] = useState('');
+  const [isHydrated, setIsHydrated] = useState(false);
+  const idCounterRef = useRef(1);
 
-  const currentExercise = useMemo(
-    () => mockExercises[exerciseIndex % mockExercises.length],
-    [exerciseIndex],
+  const knownIds = useMemo(
+    () => new Set([...sessions.map(session => session.id), ...exerciseRecords.map(record => record.id)]),
+    [exerciseRecords, sessions],
   );
 
-  const startSession = () => {
-    setSessionCounter(previousValue => previousValue + 1);
-    setExerciseIndex(previousValue => previousValue + 1);
+  const createId = () => {
+    let candidateId = `id-${idCounterRef.current}`;
+    idCounterRef.current += 1;
+
+    while (knownIds.has(candidateId)) {
+      candidateId = `id-${idCounterRef.current}`;
+      idCounterRef.current += 1;
+    }
+
+    return candidateId;
   };
+
+  const exerciseCountBySession = useMemo(() => {
+    return exerciseRecords.reduce<Map<string, number>>((acc, record) => {
+      acc.set(record.sessionId, (acc.get(record.sessionId) ?? 0) + 1);
+      return acc;
+    }, new Map());
+  }, [exerciseRecords]);
+
+  const startSession = () => {
+    const sessionId = createId();
+    setSessions(previousValue => [...previousValue, { id: sessionId, day }]);
+    setActiveSessionId(sessionId);
+  };
+
+  const finishSession = () => {
+    setActiveSessionId(null);
+  };
+
+  const addExerciseRecord = () => {
+    if (!exercise.trim() || !setsReps.trim()) {
+      return;
+    }
+
+    let sessionId = activeSessionId ?? sessions[sessions.length - 1]?.id ?? null;
+
+    if (!sessionId) {
+      sessionId = createId();
+      setSessions(previousValue => [...previousValue, { id: sessionId, day }]);
+    }
+    const resolvedSessionId = sessionId;
+
+    setExerciseRecords(previousValue => {
+      const nextRecord = {
+        id: createId(),
+        sessionId: resolvedSessionId,
+        day,
+        exercise: exercise.trim(),
+        setsReps: setsReps.trim(),
+        notes: notes.trim(),
+      };
+      const lastRecord = previousValue[previousValue.length - 1];
+
+      if (
+        lastRecord &&
+        lastRecord.sessionId === nextRecord.sessionId &&
+        lastRecord.day === nextRecord.day &&
+        lastRecord.exercise === nextRecord.exercise &&
+        lastRecord.setsReps === nextRecord.setsReps &&
+        lastRecord.notes === nextRecord.notes
+      ) {
+        return previousValue;
+      }
+
+      return [...previousValue, nextRecord];
+    });
+
+    setExercise('');
+    setSetsReps('');
+    setNotes('');
+  };
+
+  useEffect(() => {
+    const hydrate = async () => {
+      try {
+        const value = await AsyncStorage.getItem(STORAGE_KEY);
+        if (value) {
+          const parsedValue = JSON.parse(value) as {
+            sessions?: WorkoutSession[];
+            exerciseRecords?: ExerciseRecord[];
+            activeSessionId?: string | null;
+          };
+          const hydratedSessions = parsedValue.sessions ?? [];
+          const hydratedExerciseRecords = parsedValue.exerciseRecords ?? [];
+          const maxStoredId = [...hydratedSessions, ...hydratedExerciseRecords].reduce(
+            (maxValue, item) => {
+              const idMatch = item.id.match(SESSION_ID_PATTERN);
+              if (!idMatch) {
+                return maxValue;
+              }
+              return Math.max(maxValue, Number(idMatch[1]));
+            },
+            0,
+          );
+          idCounterRef.current = maxStoredId + 1;
+          setSessions(hydratedSessions);
+          setExerciseRecords(hydratedExerciseRecords);
+          setActiveSessionId(parsedValue.activeSessionId ?? null);
+        }
+      } finally {
+        setIsHydrated(true);
+      }
+    };
+
+    hydrate();
+  }, []);
+
+  useEffect(() => {
+    if (!isHydrated) {
+      return;
+    }
+
+    AsyncStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        sessions,
+        exerciseRecords,
+        activeSessionId,
+      }),
+    );
+  }, [activeSessionId, exerciseRecords, isHydrated, sessions]);
 
   return (
     <View
@@ -65,14 +206,63 @@ function AppContent() {
               onPress={startSession}
               style={styles.primaryButton}
               testID="start-session-button">
-              <Text style={styles.primaryButtonText}>Empezar sesión</Text>
+              <Text style={styles.primaryButtonText}>Iniciar sesión</Text>
+            </Pressable>
+            <Pressable
+              onPress={finishSession}
+              style={styles.secondaryButton}
+              testID="end-session-button">
+              <Text style={styles.secondaryButtonText}>Finalizar sesión</Text>
             </Pressable>
             <Text style={styles.detail} testID="session-counter">
-              Contador: {sessionCounter}
+              Sesiones iniciadas: {sessions.length}
             </Text>
-            <Text style={styles.detail} testID="current-exercise">
-              Ejercicio actual: {currentExercise}
+            <Text style={styles.detail} testID="session-status">
+              Estado: {activeSessionId ? 'En curso' : 'Sin sesión activa'}
             </Text>
+            <TextInput
+              testID="input-day"
+              accessibilityLabel="Día de entrenamiento"
+              value={day}
+              onChangeText={setDay}
+              placeholder="Día"
+              style={styles.input}
+            />
+            <TextInput
+              testID="input-exercise"
+              accessibilityLabel="Nombre del ejercicio"
+              value={exercise}
+              onChangeText={setExercise}
+              placeholder="Ejercicio"
+              style={styles.input}
+            />
+            <TextInput
+              testID="input-sets-reps"
+              accessibilityLabel="Series por repeticiones"
+              value={setsReps}
+              onChangeText={setSetsReps}
+              placeholder="Series x repeticiones"
+              style={styles.input}
+            />
+            <TextInput
+              testID="input-notes"
+              accessibilityLabel="Notas del registro"
+              value={notes}
+              onChangeText={setNotes}
+              placeholder="Notas"
+              style={styles.input}
+            />
+            <Pressable
+              onPress={addExerciseRecord}
+              style={styles.primaryButton}
+              testID="add-exercise-button">
+              <Text style={styles.primaryButtonText}>Agregar ejercicio</Text>
+            </Pressable>
+            {exerciseRecords.map(record => (
+              <Text style={styles.detail} key={record.id} testID="exercise-row">
+                {record.day};{record.exercise};{record.setsReps};{record.notes}
+              </Text>
+            ))}
           </View>
         )}
         {activeTab === 'Sesiones' && (
@@ -81,8 +271,13 @@ function AppContent() {
               Sesiones
             </Text>
             <Text style={styles.subtitle} testID="lorem-text">
-              Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+              Historial de sesiones registradas.
             </Text>
+            {sessions.map(session => (
+              <Text style={styles.detail} key={session.id} testID="session-row">
+                {session.day} · {exerciseCountBySession.get(session.id) ?? 0} ejercicios
+              </Text>
+            ))}
           </View>
         )}
         {activeTab === 'Ejercicios' && (
@@ -91,8 +286,13 @@ function AppContent() {
               Ejercicios
             </Text>
             <Text style={styles.subtitle} testID="lorem-text">
-              Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+              Lista de ejercicios cargados.
             </Text>
+            {exerciseRecords.map(record => (
+              <Text style={styles.detail} key={record.id} testID="exercise-name-row">
+                {record.exercise}
+              </Text>
+            ))}
           </View>
         )}
       </View>
@@ -151,15 +351,38 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     borderRadius: 8,
     alignSelf: 'flex-start',
-    marginBottom: 18,
+    marginBottom: 12,
   },
   primaryButtonText: {
     color: '#ffffff',
     fontWeight: '600',
   },
+  secondaryButton: {
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#2f80ed',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+    marginBottom: 12,
+  },
+  secondaryButtonText: {
+    color: '#2f80ed',
+    fontWeight: '600',
+  },
   detail: {
     fontSize: 16,
     marginBottom: 8,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#d6d6d6',
+    borderRadius: 8,
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 10,
   },
   tabBar: {
     flexDirection: 'row',

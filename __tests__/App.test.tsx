@@ -5,6 +5,19 @@
 import React from 'react';
 import ReactTestRenderer from 'react-test-renderer';
 import App from '../App';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const textValue = (children: React.ReactNode) =>
+  Array.isArray(children) ? children.join('') : String(children);
+
+const renderApp = async () => {
+  let app: ReactTestRenderer.ReactTestRenderer;
+  await ReactTestRenderer.act(async () => {
+    app = ReactTestRenderer.create(<App />);
+    await Promise.resolve();
+  });
+  return app!;
+};
 
 jest.mock('react-native-safe-area-context', () => ({
   SafeAreaProvider: ({ children }: { children: React.ReactNode }) => children,
@@ -16,14 +29,19 @@ jest.mock('react-native-safe-area-context', () => ({
   }),
 }));
 
+jest.mock('@react-native-async-storage/async-storage', () => ({
+  getItem: jest.fn(),
+  setItem: jest.fn(),
+}));
+
+beforeEach(() => {
+  (AsyncStorage.getItem as jest.Mock).mockResolvedValue(null);
+  (AsyncStorage.setItem as jest.Mock).mockResolvedValue(undefined);
+});
+
 test('renders home content by default', async () => {
-  let app: ReactTestRenderer.ReactTestRenderer;
-
-  await ReactTestRenderer.act(() => {
-    app = ReactTestRenderer.create(<App />);
-  });
-
-  const root = app!.root;
+  const app = await renderApp();
+  const root = app.root;
   expect(root.findByProps({ testID: 'tab-home' })).toBeTruthy();
   expect(root.findByProps({ testID: 'tab-sesiones' })).toBeTruthy();
   expect(root.findByProps({ testID: 'tab-ejercicios' })).toBeTruthy();
@@ -31,40 +49,60 @@ test('renders home content by default', async () => {
     'Último progreso',
   );
   expect(root.findByProps({ testID: 'session-counter' }).props.children).toEqual([
-    'Contador: ',
+    'Sesiones iniciadas: ',
     0,
   ]);
 });
 
-test('increments counter when starting a session', async () => {
-  let app: ReactTestRenderer.ReactTestRenderer;
+test('starts session and allows adding exercise records', async () => {
+  const app = await renderApp();
+  const root = app.root;
 
-  await ReactTestRenderer.act(() => {
-    app = ReactTestRenderer.create(<App />);
-  });
-  const root = app!.root;
   await ReactTestRenderer.act(() => {
     root.findByProps({ testID: 'start-session-button' }).props.onPress();
   });
+  await ReactTestRenderer.act(() => {
+    root.findByProps({ testID: 'input-day' }).props.onChangeText('Lunes');
+    root
+      .findByProps({ testID: 'input-exercise' })
+      .props.onChangeText('Caminata en cinta');
+    root.findByProps({ testID: 'input-sets-reps' }).props.onChangeText('15 min');
+  });
+  await ReactTestRenderer.act(() => {
+    root.findByProps({ testID: 'add-exercise-button' }).props.onPress();
+  });
+  await ReactTestRenderer.act(() => {
+    root.findByProps({ testID: 'end-session-button' }).props.onPress();
+  });
+  await ReactTestRenderer.act(() => {
+    root
+      .findByProps({ testID: 'input-exercise' })
+      .props.onChangeText('Sillón femoral');
+    root.findByProps({ testID: 'input-sets-reps' }).props.onChangeText('4 x 10');
+  });
+  await ReactTestRenderer.act(() => {
+    root.findByProps({ testID: 'add-exercise-button' }).props.onPress();
+  });
 
   expect(root.findByProps({ testID: 'session-counter' }).props.children).toEqual([
-    'Contador: ',
+    'Sesiones iniciadas: ',
     1,
   ]);
-  expect(root.findByProps({ testID: 'current-exercise' }).props.children).toEqual([
-    'Ejercicio actual: ',
-    'Press de banca',
+  expect(root.findByProps({ testID: 'session-status' }).props.children).toEqual([
+    'Estado: ',
+    'Sin sesión activa',
   ]);
+  const exerciseRows = root.findAllByProps({ testID: 'exercise-row' });
+  const uniqueRows = new Set(exerciseRows.map(row => textValue(row.props.children)));
+  expect(uniqueRows).toEqual(
+    new Set(['Lunes;Caminata en cinta;15 min;', 'Lunes;Sillón femoral;4 x 10;']),
+  );
+  expect(AsyncStorage.setItem).toHaveBeenCalled();
 });
 
 test('navigates to sesiones and ejercicios tabs', async () => {
-  let app: ReactTestRenderer.ReactTestRenderer;
-
-  await ReactTestRenderer.act(() => {
-    app = ReactTestRenderer.create(<App />);
-  });
-
-  const root = app!.root;
+  const app = await renderApp();
+  const root = app.root;
   await ReactTestRenderer.act(() => {
     root.findByProps({ testID: 'tab-sesiones' }).props.onPress();
   });
@@ -72,7 +110,7 @@ test('navigates to sesiones and ejercicios tabs', async () => {
     'Sesiones',
   );
   expect(root.findByProps({ testID: 'lorem-text' }).props.children).toBe(
-    'Lorem ipsum dolor sit amet, consectetur adipiscing elit.',
+    'Historial de sesiones registradas.',
   );
 
   await ReactTestRenderer.act(() => {
@@ -82,6 +120,6 @@ test('navigates to sesiones and ejercicios tabs', async () => {
     'Ejercicios',
   );
   expect(root.findByProps({ testID: 'lorem-text' }).props.children).toBe(
-    'Lorem ipsum dolor sit amet, consectetur adipiscing elit.',
+    'Lista de ejercicios cargados.',
   );
 });

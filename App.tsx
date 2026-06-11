@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   Pressable,
@@ -31,6 +31,7 @@ type ExerciseRecord = {
 };
 
 const STORAGE_KEY = 'gym-tracker:sessions';
+const SESSION_ID_PATTERN = /^id-(\d+)$/;
 
 function App() {
   const isDarkMode = useColorScheme() === 'dark';
@@ -54,8 +55,24 @@ function AppContent() {
   const [setsReps, setSetsReps] = useState('');
   const [notes, setNotes] = useState('');
   const [isHydrated, setIsHydrated] = useState(false);
+  const idCounterRef = useRef(1);
 
-  const createId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  const knownIds = useMemo(
+    () => new Set([...sessions.map(session => session.id), ...exerciseRecords.map(record => record.id)]),
+    [exerciseRecords, sessions],
+  );
+
+  const createId = () => {
+    let candidateId = `id-${idCounterRef.current}`;
+    idCounterRef.current += 1;
+
+    while (knownIds.has(candidateId)) {
+      candidateId = `id-${idCounterRef.current}`;
+      idCounterRef.current += 1;
+    }
+
+    return candidateId;
+  };
 
   const exerciseCountBySession = useMemo(() => {
     return exerciseRecords.reduce<Map<string, number>>((acc, record) => {
@@ -127,8 +144,21 @@ function AppContent() {
             exerciseRecords?: ExerciseRecord[];
             activeSessionId?: string | null;
           };
-          setSessions(parsedValue.sessions ?? []);
-          setExerciseRecords(parsedValue.exerciseRecords ?? []);
+          const hydratedSessions = parsedValue.sessions ?? [];
+          const hydratedExerciseRecords = parsedValue.exerciseRecords ?? [];
+          const maxStoredId = [...hydratedSessions, ...hydratedExerciseRecords].reduce(
+            (maxValue, item) => {
+              const idMatch = item.id.match(SESSION_ID_PATTERN);
+              if (!idMatch) {
+                return maxValue;
+              }
+              return Math.max(maxValue, Number(idMatch[1]));
+            },
+            0,
+          );
+          idCounterRef.current = maxStoredId + 1;
+          setSessions(hydratedSessions);
+          setExerciseRecords(hydratedExerciseRecords);
           setActiveSessionId(parsedValue.activeSessionId ?? null);
         }
       } finally {

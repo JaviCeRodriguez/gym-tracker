@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   Pressable,
@@ -54,12 +54,8 @@ function AppContent() {
   const [setsReps, setSetsReps] = useState('');
   const [notes, setNotes] = useState('');
   const [isHydrated, setIsHydrated] = useState(false);
-  const idCounterRef = useRef(0);
 
-  const createId = () => {
-    idCounterRef.current += 1;
-    return `${Date.now()}-${idCounterRef.current}`;
-  };
+  const createId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
   const exerciseCountBySession = useMemo(() => {
     return exerciseRecords.reduce<Map<string, number>>((acc, record) => {
@@ -196,6 +192,7 @@ function AppContent() {
             </Text>
             <TextInput
               testID="input-day"
+              accessibilityLabel="Día de entrenamiento"
               value={day}
               onChangeText={setDay}
               placeholder="Día"
@@ -203,6 +200,7 @@ function AppContent() {
             />
             <TextInput
               testID="input-exercise"
+              accessibilityLabel="Nombre del ejercicio"
               value={exercise}
               onChangeText={setExercise}
               placeholder="Ejercicio"
@@ -210,6 +208,7 @@ function AppContent() {
             />
             <TextInput
               testID="input-sets-reps"
+              accessibilityLabel="Series por repeticiones"
               value={setsReps}
               onChangeText={setSetsReps}
               placeholder="Series x repeticiones"
@@ -217,6 +216,7 @@ function AppContent() {
             />
             <TextInput
               testID="input-notes"
+              accessibilityLabel="Notas del registro"
               value={notes}
               onChangeText={setNotes}
               placeholder="Notas"

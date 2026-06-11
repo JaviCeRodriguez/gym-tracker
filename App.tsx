@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   Pressable,
@@ -54,9 +54,22 @@ function AppContent() {
   const [setsReps, setSetsReps] = useState('');
   const [notes, setNotes] = useState('');
   const [isHydrated, setIsHydrated] = useState(false);
+  const idCounterRef = useRef(0);
+
+  const createId = () => {
+    idCounterRef.current += 1;
+    return `${Date.now()}-${idCounterRef.current}`;
+  };
+
+  const exerciseCountBySession = useMemo(() => {
+    return exerciseRecords.reduce<Map<string, number>>((acc, record) => {
+      acc.set(record.sessionId, (acc.get(record.sessionId) ?? 0) + 1);
+      return acc;
+    }, new Map());
+  }, [exerciseRecords]);
 
   const startSession = () => {
-    const sessionId = `${Date.now()}`;
+    const sessionId = createId();
     setSessions(previousValue => [...previousValue, { id: sessionId, day }]);
     setActiveSessionId(sessionId);
   };
@@ -70,17 +83,18 @@ function AppContent() {
       return;
     }
 
-    const latestSession = sessions[sessions.length - 1];
-    const sessionId = activeSessionId ?? latestSession?.id ?? `${Date.now()}`;
+    let sessionId = activeSessionId ?? sessions[sessions.length - 1]?.id ?? null;
 
-    if (!latestSession) {
+    if (!sessionId) {
+      sessionId = createId();
       setSessions([{ id: sessionId, day }]);
     }
+    const resolvedSessionId = sessionId;
 
     setExerciseRecords(previousValue => {
       const nextRecord = {
-        id: `${Date.now()}-${previousValue.length}`,
-        sessionId,
+        id: createId(),
+        sessionId: resolvedSessionId,
         day,
         exercise: exercise.trim(),
         setsReps: setsReps.trim(),
@@ -231,7 +245,7 @@ function AppContent() {
             </Text>
             {sessions.map(session => (
               <Text style={styles.detail} key={session.id} testID="session-row">
-                {session.day} · {exerciseRecords.filter(record => record.sessionId === session.id).length} ejercicios
+                {session.day} · {exerciseCountBySession.get(session.id) ?? 0} ejercicios
               </Text>
             ))}
           </View>
